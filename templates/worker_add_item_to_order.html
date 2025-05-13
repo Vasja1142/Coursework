@@ -1,0 +1,98 @@
+<!-- templates/worker_add_item_to_order.html -->
+{% extends "base.html" %}
+
+{% block title %}Заказ #{{ order_id }} - Управление{% endblock %}
+
+{% block content %}
+    <h2>Заказ #{{ order_id }}</h2>
+    {% if order_info %}
+        <div class="card mb-3">
+            <div class="card-header">
+                Информация о заказе
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-8">
+                        <p><strong>Дата создания:</strong> {{ order_info['Дата_создания'].strftime('%Y-%m-%d %H:%M:%S') if order_info['Дата_создания'] else 'N/A' }}</p>
+                        <p><strong>Сотрудник:</strong> {{ order_info['Фамилия_сотрудника'] }} {{ order_info['Имя_сотрудника'] }}</p>
+                        <p><strong>Касса:</strong> {{ order_info['Номер_кассы'] }}</p>
+                        <p><strong>Текущий тип оплаты:</strong> <strong class="text-info">{{ order_info['Тип_оплаты'] if order_info['Тип_оплаты'] else 'Не указан' }}</strong></p>
+                        <h4 class="card-title">Общая сумма: {{ "%.2f"|format(order_info['Общая_сумма']) }} руб.</h4>
+                    </div>
+                    <div class="col-md-4">
+                        <h5>Изменить тип оплаты:</h5>
+                        <form method="post">
+                            <input type="hidden" name="form_name" value="update_payment_type">
+                            <div class="form-group">
+                                <select name="payment_type" class="form-control form-control-sm">
+                                    <option value="">-- Не указан --</option>
+                                    {% for p_type in payment_types %}
+                                        <option value="{{ p_type }}" {% if order_info['Тип_оплаты'] == p_type %}selected{% endif %}>{{ p_type }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <button type="submit" class="btn btn-sm btn-info">Сохранить тип оплаты</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <hr>
+        <h3>Добавить блюдо в заказ:</h3>
+        <form method="post" class="form-inline mb-3">
+            <input type="hidden" name="form_name" value="add_dish_item">
+            <div class="form-group mr-2">
+                <label for="dish_id" class="mr-2">Блюдо:</label>
+                <select name="dish_id" id="dish_id" class="form-control" required>
+                    <option value="">-- Выберите блюдо --</option>
+                    {% for dish in all_dishes %}
+                        <option value="{{ dish['ID_блюда'] }}">{{ dish['Название'] }} ({{ "%.2f"|format(dish['Цена_продажи']) }} руб.)</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group mr-2">
+                <label for="quantity" class="mr-2">Количество:</label>
+                <input type="number" name="quantity" id="quantity" class="form-control" value="1" min="1" required style="width: 80px;">
+            </div>
+            <button type="submit" class="btn btn-success">Добавить в заказ</button>
+        </form>
+
+        <hr>
+        <h3>Позиции заказа:</h3>
+        {% if order_items %}
+            <table class="table table-sm table-striped">
+                <thead>
+                    <tr>
+                        <th>Блюдо</th>
+                        <th>Количество</th>
+                        <th>Цена за ед.</th>
+                        <th>Сумма</th>
+                        <th>Действие</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in order_items %}
+                    <tr>
+                        <td>{{ item['Название_блюда'] }}</td>
+                        <td>{{ item['Количество'] }}</td>
+                        <td>{{ "%.2f"|format(item['Цена_на_момент_заказа']) }}</td>
+                        <td>{{ "%.2f"|format(item['Сумма_позиции']) }}</td>
+                        <td>
+                            <!-- <a href="#" class="btn btn-sm btn-danger">Удалить</a> -->
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% else %}
+            <p>В заказе пока нет позиций.</p>
+        {% endif %}
+
+    {% else %}
+        <div class="alert alert-danger">Информация о заказе #{{ order_id }} не найдена.</div>
+    {% endif %}
+    <hr>
+    <a href="{{ url_for('worker_dashboard') }}" class="btn btn-secondary mt-3">К панели Работника</a>
+    <a href="{{ url_for('worker_create_order') }}" class="btn btn-info mt-3">Создать еще один заказ</a>
+{% endblock %}

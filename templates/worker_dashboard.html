@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Панель Работника{% endblock %}
+{% block content %}
+    <h1>Панель управления Работника</h1>
+    <p>Добро пожаловать, {{ session.current_role_key }}!</p>
+    <div class="list-group">
+        <a href="{{ url_for('worker_menu') }}" class="list-group-item list-group-item-action">Просмотр Меню</a>
+        <a href="{{ url_for('worker_create_order') }}" class="list-group-item list-group-item-action">Создать Новый Заказ</a>
+        <!-- Ссылки на просмотр существующих заказов добавим позже -->
+    </div>
+{% endblock %}

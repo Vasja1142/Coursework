@@ -1,0 +1,15 @@
+<!-- templates/owner_dashboard.html -->
+{% extends "base.html" %}
+{% block title %}Панель Владельца{% endblock %}
+{% block content %}
+    <h1>Панель управления Владельца</h1>
+    <p>Добро пожаловать, {{ session.current_role }}!</p>
+    <div class="list-group">
+        <a href="{{ url_for('owner_stock_balance') }}" class="list-group-item list-group-item-action">Текущие остатки продуктов</a>
+        <a href="{{ url_for('owner_orders_list') }}" class="list-group-item list-group-item-action">Список Заказов</a>
+        <a href="{{ url_for('owner_dishes_details') }}" class="list-group-item list-group-item-action">Детализация Блюд (Рецептуры)</a>
+        <a href="{{ url_for('owner_sales_summary_by_dish') }}" class="list-group-item list-group-item-action">Сводка Продаж по Блюдам</a>
+        <a href="{{ url_for('owner_write_offs_full') }}" class="list-group-item list-group-item-action">Полная Информация по Списаниям</a>
+        <!-- Другие ссылки для владельца -->
+    </div>
+{% endblock %}

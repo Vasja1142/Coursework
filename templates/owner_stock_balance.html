@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Текущие остатки{% endblock %}
+{% block content %}
+    <h2>Текущие остатки продуктов на складах</h2>
+    {% if items %}
+        <table class="table table-striped">
+            <thead>
+                <tr>
+                    <th>Склад</th>
+                    <th>Продукт</th>
+                    <th>Категория продукта</th>
+                    <th>Количество</th>
+                    <th>Ед. изм.</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in items %}
+                    <tr>
+                        <td>{{ item['Склад'] }}</td>
+                        <td>{{ item['Продукт'] }}</td>
+                        <td>{{ item['Категория_продукта'] }}</td>
+                        <td>{{ item['Количество'] }}</td>
+                        <td>{{ item['Ед_изм'] }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <p>Нет данных для отображения или произошла ошибка.</p>
+    {% endif %}
+    <a href="{{ url_for('owner_dashboard') }}" class="btn btn-secondary">Назад</a>
+{% endblock %}

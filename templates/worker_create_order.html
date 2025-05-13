@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Создание Нового Заказа{% endblock %}
+{% block content %}
+    <h2>Создание Нового Заказа</h2>
+    <form method="post">
+        <div class="form-group">
+            <label for="id_kassy">Касса:</label>
+            <select name="id_kassy" id="id_kassy" class="form-control" required>
+                <option value="">-- Выберите кассу --</option>
+                {% for kassa in kassy %}
+                    <option value="{{ kassa['ID_кассы'] }}">{{ kassa['Номер_кассы'] }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <label for="id_sotrudnika">Сотрудник, оформляющий заказ:</label>
+            <select name="id_sotrudnika" id="id_sotrudnika" class="form-control" required>
+                <option value="">-- Выберите сотрудника --</option>
+                {% for sotrudnik in sotrudniki %}
+                    <option value="{{ sotrudnik['ID_сотрудника'] }}">{{ sotrudnik['Фамилия'] }} {{ sotrudnik['Имя'] }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <button type="submit" class="btn btn-primary">Создать Заказ</button>
+    </form>
+    <hr>
+    <a href="{{ url_for('worker_dashboard') }}" class="btn btn-secondary mt-3">Назад к панели Работника</a>
+{% endblock %}
