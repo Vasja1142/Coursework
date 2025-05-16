@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block title %}Оформление списания{% endblock %}
+{% block content %}
+    <h2>Оформление списания</h2>
+    <form method="post" id="writeOffForm">
+        <div class="form-row">
+            <div class="form-group col-md-6">
+                <label for="id_sklada">Склад списания:</label>
+                <select name="id_sklada" id="id_sklada" class="form-control" required>
+                    <option value="">-- Выберите склад --</option>
+                    {% for sklad in warehouses %}
+                        <option value="{{ sklad['ID_склада'] }}" {% if form_data.id_sklada == sklad['ID_склада']|string %}selected{% endif %}>{{ sklad['Название'] }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group col-md-6">
+                <label for="id_sotrudnika_otv">Ответственный сотрудник:</label>
+                <select name="id_sotrudnika_otv" id="id_sotrudnika_otv" class="form-control" required>
+                    <option value="">-- Выберите сотрудника --</option>
+                    {% for sotrudnik in employees %}
+                        <option value="{{ sotrudnik['ID_сотрудника'] }}" {% if form_data.id_sotrudnika_otv == sotrudnik['ID_сотрудника']|string %}selected{% endif %}>{{ sotrudnik['Фамилия'] }} {{ sotrudnik['Имя'] }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+        <div class="form-group">
+            <label for="id_prichiny">Причина списания:</label>
+            <select name="id_prichiny" id="id_prichiny" class="form-control" required>
+                <option value="">-- Выберите причину --</option>
+                {% for reason in reasons %}
+                    <option value="{{ reason['ID_причины_списания'] }}" {% if form_data.id_prichiny == reason['ID_причины_списания']|string %}selected{% endif %}>{{ reason['Название'] }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <label for="kommentariy">Комментарий (необязательно):</label>
+            <textarea name="kommentariy" id="kommentariy" class="form-control">{{ form_data.kommentariy }}</textarea>
+        </div>
+        <hr>
+        <h5>Объект списания:</h5>
+        <div class="form-group">
+            <label for="write_off_type">Тип объекта:</label>
+            <select name="write_off_type" id="write_off_type" class="form-control" required>
+                <option value="">-- Выберите тип --</option>
+                <option value="product" {% if form_data.write_off_type == 'product' %}selected{% endif %}>Продукт</option>
+                <option value="dish" {% if form_data.write_off_type == 'dish' %}selected{% endif %}>Блюдо</option>
+            </select>
+        </div>
+        <div class="form-group" id="product_select_group" style="display: {% if form_data.write_off_type == 'product' %}block{% else %}none{% endif %};">
+            <label for="product_id">Продукт:</label>
+            <select name="object_id_product" id="product_id" class="form-control">
+                <option value="">-- Выберите продукт --</option>
+                {% for product in products %}
+                    <option value="{{ product['ID_продукта'] }}" {% if form_data.write_off_type == 'product' and form_data.object_id == product['ID_продукта']|string %}selected{% endif %}>{{ product['Название'] }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group" id="dish_select_group" style="display: {% if form_data.write_off_type == 'dish' %}block{% else %}none{% endif %};">
+            <label for="dish_id">Блюдо:</label>
+            <select name="object_id_dish" id="dish_id" class="form-control">
+                <option value="">-- Выберите блюдо --</option>
+                {% for dish in dishes %}
+                    <option value="{{ dish['ID_блюда'] }}" {% if form_data.write_off_type == 'dish' and form_data.object_id == dish['ID_блюда']|string %}selected{% endif %}>{{ dish['Название'] }}</option>
+                {% endfor %}
+            </select>
+        </div>
+         <input type="hidden" name="object_id" id="actual_object_id" value="{{ form_data.object_id | default('') }}">
+
+        <div class="form-group">
+            <label for="quantity_write_off">Количество (шт. для блюд / ед.изм. для продуктов):</label>
+            <input type="number" step="any" name="quantity_write_off" id="quantity_write_off" class="form-control" value="{{ form_data.quantity_write_off | default(1) }}" min="0.001" required>
+        </div>
+
+        <button type="submit" class="btn btn-danger">Оформить списание</button>
+    </form>
+    <hr>
+    <a href="{{ url_for('admin_sklad_dashboard') }}" class="btn btn-secondary mt-3">Назад к панели Администратора</a>
+
+    <script>
+        const writeOffTypeSelect = document.getElementById('write_off_type');
+        const productGroup = document.getElementById('product_select_group');
+        const dishGroup = document.getElementById('dish_select_group');
+        const productIdSelect = document.getElementById('product_id');
+        const dishIdSelect = document.getElementById('dish_id');
+        const actualObjectIdInput = document.getElementById('actual_object_id');
+
+        function updateActualObjectId() {
+            const selectedType = writeOffTypeSelect.value;
+            if (selectedType === 'product') {
+                actualObjectIdInput.value = productIdSelect.value;
+            } else if (selectedType === 'dish') {
+                actualObjectIdInput.value = dishIdSelect.value;
+            } else {
+                actualObjectIdInput.value = '';
+            }
+        }
+
+        function toggleObjectSelect() {
+            const selectedType = writeOffTypeSelect.value;
+            
+            // Сначала сбрасываем required и value для обоих селектов
+            productIdSelect.removeAttribute('required');
+            dishIdSelect.removeAttribute('required');
+            // Не сбрасываем значения селектов, чтобы они сохранялись при ошибке формы
+            // productIdSelect.value = ''; 
+            // dishIdSelect.value = '';
+
+            if (selectedType === 'product') {
+                productGroup.style.display = 'block';
+                dishGroup.style.display = 'none';
+                productIdSelect.setAttribute('required', 'required');
+            } else if (selectedType === 'dish') {
+                productGroup.style.display = 'none';
+                dishGroup.style.display = 'block';
+                dishIdSelect.setAttribute('required', 'required');
+            } else {
+                productGroup.style.display = 'none';
+                dishGroup.style.display = 'none';
+            }
+            updateActualObjectId(); // Обновляем скрытое поле при смене типа
+        }
+
+        writeOffTypeSelect.addEventListener('change', toggleObjectSelect);
+        productIdSelect.addEventListener('change', updateActualObjectId); // Обновляем при смене продукта
+        dishIdSelect.addEventListener('change', updateActualObjectId);   // Обновляем при смене блюда
+        
+        document.addEventListener('DOMContentLoaded', function() {
+            toggleObjectSelect(); // Вызываем при загрузке для установки правильного состояния
+        });
+
+        // Этот обработчик submit больше не нужен, так как updateActualObjectId вызывается при каждом изменении
+        // document.getElementById('writeOffForm').addEventListener('submit', function() {
+        //     updateActualObjectId();
+        // });
+    </script>
+{% endblock %}

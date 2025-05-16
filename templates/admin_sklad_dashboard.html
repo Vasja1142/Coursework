@@ -1,7 +1,14 @@
+<!-- templates/admin_sklad_dashboard.html -->
 {% extends "base.html" %}
+
 {% block title %}Панель Администратора Склада{% endblock %}
+
 {% block content %}
-    <h1>Панель управления Администратора Склада</h1>
-    <p>Добро пожаловать, {{ session.current_role }}!</p>
-    <!-- Ссылки для администратора склада -->
+    <h2>Панель Администратора Склада</h2>
+    <div class="list-group">
+        <a href="{{ url_for('admin_sklad_stock_balance') }}" class="list-group-item list-group-item-action">Просмотр остатков</a>
+        <a href="{{ url_for('admin_sklad_create_receipt') }}" class="list-group-item list-group-item-action">Оформить поступление продуктов</a>
+        <a href="{{ url_for('admin_sklad_create_write_off') }}" class="list-group-item list-group-item-action">Оформить списание</a>
+        <!-- Здесь будут ссылки на оформление поступлений и списаний -->
+    </div>
 {% endblock %}

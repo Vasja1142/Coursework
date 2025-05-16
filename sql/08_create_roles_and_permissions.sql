@@ -1,135 +1,143 @@
 -- 08_create_roles_and_permissions.sql
--- Создание ролей пользователей и назначение прав доступа
--- Используется имя базы данных "sushi_shop_db" (измените, если ваше отличается)
+-- ВАЖНО: Выполнять под суперпользователем (например, postgres)!
+-- Этот скрипт может потребовать ДВУХ запусков.
+-- Первый запуск очистит максимум зависимостей и удалит роли.
+-- Второй запуск создаст новые роли и выдаст права.
 
-BEGIN;
+-- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+-- ЭТАП 1: ОЧИСТКА И УДАЛЕНИЕ СТАРЫХ РОЛЕЙ (ЗАПУСТИТЬ ПЕРВЫМ)
+-- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+DO $$
+DECLARE
+  role_name_quoted TEXT;
+  role_name_lower TEXT;
+  roles_to_clean_quoted TEXT[] := ARRAY['"Владелец"', '"АдминистраторСклада"', '"Работник"'];
+  roles_to_clean_lower TEXT[] := ARRAY['владелец', 'администраторсклада', 'работник'];
+BEGIN
+  RAISE NOTICE '--- STARTING CLEANUP PHASE ---';
 
--- 1. Роль: "Владелец"
--- Удаляем роль, если существует, чтобы избежать ошибки при повторном запуске (для разработки)
-DROP ROLE IF EXISTS "Владелец";
-CREATE ROLE "Владелец" WITH LOGIN PASSWORD 'owner_secure_password123'; -- ЗАМЕНИТЕ ПАРОЛЬ!
+  -- Очистка ролей, созданных В КАВЫЧКАХ
+  FOREACH role_name_quoted IN ARRAY roles_to_clean_quoted
+  LOOP
+    -- Используем trim для получения чистого имени для проверки в pg_roles
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = trim(BOTH '"' FROM role_name_quoted)) THEN
+      RAISE NOTICE 'Cleaning up quoted role: %', role_name_quoted;
+      EXECUTE 'REASSIGN OWNED BY ' || role_name_quoted || ' TO postgres;';
+      EXECUTE 'DROP OWNED BY ' || role_name_quoted || ';';
+      EXECUTE 'DROP ROLE IF EXISTS ' || role_name_quoted || ';';
+    ELSE
+      RAISE NOTICE 'Quoted role % does not exist, skipping.', role_name_quoted;
+    END IF;
+  END LOOP;
 
-GRANT CONNECT ON DATABASE "sushi_shop_db" TO "Владелец";
-GRANT USAGE ON SCHEMA public TO "Владелец";
+  -- Очистка ролей, созданных БЕЗ КАВЫЧЕК (в нижнем регистре)
+  FOREACH role_name_lower IN ARRAY roles_to_clean_lower
+  LOOP
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = role_name_lower) THEN
+      RAISE NOTICE 'Cleaning up lower-case role: %', role_name_lower;
+      EXECUTE 'REASSIGN OWNED BY ' || quote_ident(role_name_lower) || ' TO postgres;';
+      EXECUTE 'DROP OWNED BY ' || quote_ident(role_name_lower) || ';';
+      EXECUTE 'DROP ROLE IF EXISTS ' || quote_ident(role_name_lower) || ';';
+    ELSE
+      RAISE NOTICE 'Lower-case role % does not exist, skipping.', role_name_lower;
+    END IF;
+  END LOOP;
+  RAISE NOTICE '--- CLEANUP PHASE COMPLETE ---';
+END$$;
 
--- Права на представления (используем те, что создали в 06_create_views.sql)
+-- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+-- ЭТАП 2: СОЗДАНИЕ НОВЫХ РОЛЕЙ И ВЫДАЧА ПРАВ (ЗАПУСТИТЬ ВТОРЫМ, ЕСЛИ ПЕРВЫЙ ПРОШЕЛ УСПЕШНО)
+-- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname IN ('Владелец', 'АдминистраторСклада', 'Работник', 'владелец', 'администраторсклада', 'работник')) THEN
+    RAISE WARNING 'Old roles might still exist. Please ensure cleanup was successful or run cleanup again.';
+  END IF;
+END$$;
+
+BEGIN; -- Начинаем новую транзакцию для создания ролей и прав
+
+-- 1. Роль: владелец (без изменений в правах)
+DROP ROLE IF EXISTS владелец; -- Добавляем DROP IF EXISTS и сюда для идемпотентности второго этапа
+CREATE ROLE владелец WITH LOGIN PASSWORD 'owner_secure_password123';
+GRANT CONNECT ON DATABASE sushi_shop_db TO владелец;
+GRANT USAGE ON SCHEMA public TO владелец;
 GRANT SELECT ON
-    "VТекущиеОстатки",
-    "VСписокЗаказов",
-    "VДетализацияЗаказов",
-    "VДетализацияБлюдСИнгредиентами",
-    "VСводкаПродажПоБлюдам",
-    "VПолнаяИнформацияПоСписаниям"
-TO "Владелец";
+    "VТекущиеОстатки", "VСписокЗаказов", "VДетализацияЗаказов",
+    "VДетализацияБлюдСИнгредиентами", "VСводкаПродажПоБлюдам", "VПолнаяИнформацияПоСписаниям"
+TO владелец;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO владелец;
+GRANT EXECUTE ON FUNCTION создать_списание_продукта(INTEGER, INTEGER, INTEGER, TEXT, INTEGER, NUMERIC) TO владелец;
+GRANT EXECUTE ON FUNCTION создать_списание_блюда(INTEGER, INTEGER, INTEGER, TEXT, INTEGER, INTEGER) TO владелец;
+GRANT EXECUTE ON FUNCTION "РассчитатьСреднююЦенуЗакупки"(INTEGER) TO владелец;
+GRANT EXECUTE ON FUNCTION "СоздатьНовыйЗаказ"(INTEGER, INTEGER, OUT INTEGER) TO владелец;
+GRANT EXECUTE ON FUNCTION "ДобавитьПозициюВЗаказ"(INTEGER, INTEGER, INTEGER) TO владелец;
 
--- Права на таблицы (все таблицы на SELECT для владельца)
-GRANT SELECT ON ALL TABLES IN SCHEMA public TO "Владелец";
-
--- Права на функции (пример, если будет такая функция)
--- GRANT EXECUTE ON FUNCTION "РассчитатьСреднююЦенуЗакупки"(INTEGER) TO "Владелец";
--- Выдадим права на существующие функции для полноты
-GRANT EXECUTE ON FUNCTION "создать_списание_продукта"(INTEGER, INTEGER, INTEGER, TEXT, INTEGER, NUMERIC) TO "Владелец";
-GRANT EXECUTE ON FUNCTION "создать_списание_блюда"(INTEGER, INTEGER, INTEGER, TEXT, INTEGER, INTEGER) TO "Владелец";
-
-
--- 2. Роль: "АдминистраторСклада"
-DROP ROLE IF EXISTS "АдминистраторСклада";
-CREATE ROLE "АдминистраторСклада" WITH LOGIN PASSWORD 'admin_sklad_secure_pass456'; -- ЗАМЕНИТЕ ПАРОЛЬ!
-
-GRANT CONNECT ON DATABASE "sushi_shop_db" TO "АдминистраторСклада";
-GRANT USAGE ON SCHEMA public TO "АдминистраторСклада";
-
--- Права на представления
-GRANT SELECT ON "VТекущиеОстатки" TO "АдминистраторСклада";
-GRANT SELECT ON "VПолнаяИнформацияПоСписаниям" TO "АдминистраторСклада";
-
--- Права на таблицы
+-- 2. Роль: администраторсклада
+DROP ROLE IF EXISTS администраторсклада;
+CREATE ROLE администраторсклада WITH LOGIN PASSWORD 'admin_sklad_secure_pass456';
+GRANT CONNECT ON DATABASE sushi_shop_db TO администраторсклада;
+GRANT USAGE ON SCHEMA public TO администраторсклада;
+GRANT SELECT ON "VТекущиеОстатки", "VПолнаяИнформацияПоСписаниям" TO администраторсклада;
 GRANT SELECT ON TABLE
     "Склад", "Продукт", "КатегорияПродукта", "ЕдиницаИзмерения",
-    "ПричинаСписания", "Сотрудник", "ОстатокПродуктаНаСкладе",
+    "ПричинаСписания", "Сотрудник", "ОстатокПродуктаНаСкладе", -- SELECT уже есть, это хорошо
     "Поступление", "ПозицияПоступления", "Списание", "СписаниеПродуктов", "СписаниеБлюд",
-    "СоставБлюда" -- Чтобы видеть, из чего состоят блюда при списании
-TO "АдминистраторСклада";
+    "СоставБлюда", "Блюдо"
+TO администраторсклада;
 
--- Права на INSERT для операций, которые он выполняет
-GRANT INSERT ON TABLE "Поступление", "ПозицияПоступления" TO "АдминистраторСклада";
--- Для списаний используются функции, поэтому прямой INSERT в таблицы списаний не даем.
+GRANT INSERT ON TABLE "Поступление", "ПозицияПоступления",
+                      "Списание", "СписаниеПродуктов", "СписаниеБлюд",
+                      "ОстатокПродуктаНаСкладе" -- <<< ДОБАВЬТЕ INSERT сюда (если его не было)
+TO администраторсклада;
 
--- Права на UPDATE (например, для коррекции данных поступления, если разрешено)
-GRANT UPDATE ON TABLE "Поступление", "ПозицияПоступления" TO "АдминистраторСклада";
--- Возможность ручной коррекции остатков (с ОЧЕНЬ большой осторожностью и логированием в приложении!)
-GRANT UPDATE ON TABLE "ОстатокПродуктаНаСкладе" TO "АдминистраторСклада";
+GRANT UPDATE ON TABLE "Поступление", "ПозицияПоступления",
+                      "ОстатокПродуктаНаСкладе" -- UPDATE уже был, это хорошо
+TO администраторсклада;
 
--- Права на функции
-GRANT EXECUTE ON FUNCTION "создать_списание_продукта"(INTEGER, INTEGER, INTEGER, TEXT, INTEGER, NUMERIC) TO "АдминистраторСклада";
-GRANT EXECUTE ON FUNCTION "создать_списание_блюда"(INTEGER, INTEGER, INTEGER, TEXT, INTEGER, INTEGER) TO "АдминистраторСклада";
--- Если будет функция "ПровестиПоступление", то:
--- GRANT EXECUTE ON FUNCTION "ПровестиПоступление"(/* параметры */) TO "АдминистраторСклада";
+GRANT EXECUTE ON FUNCTION создать_списание_продукта(INTEGER, INTEGER, INTEGER, TEXT, INTEGER, NUMERIC) TO администраторсклада;
+GRANT EXECUTE ON FUNCTION создать_списание_блюда(INTEGER, INTEGER, INTEGER, TEXT, INTEGER, INTEGER) TO администраторсклада;
 
 
--- 3. Роль: "Работник" (например, кассир)
-DROP ROLE IF EXISTS "Работник";
-CREATE ROLE "Работник" WITH LOGIN PASSWORD 'worker_secure_pass789'; -- ЗАМЕНИТЕ ПАРОЛЬ!
 
-GRANT CONNECT ON DATABASE "sushi_shop_db" TO "Работник";
-GRANT USAGE ON SCHEMA public TO "Работник";
+-- 3. Роль: работник (ИЗМЕНЕНИЯ ЗДЕСЬ)
+DROP ROLE IF EXISTS работник;
+CREATE ROLE работник WITH LOGIN PASSWORD 'worker_secure_pass789'; -- ЗАМЕНИТЕ ПАРОЛЬ!
+GRANT CONNECT ON DATABASE sushi_shop_db TO работник;
+GRANT USAGE ON SCHEMA public TO работник;
 
--- Права на представления
-GRANT SELECT ON "VСписокЗаказов", "VДетализацияЗаказов" TO "Работник";
-GRANT SELECT ON "VДетализацияБлюдСИнгредиентами" TO "Работник"; -- Чтобы видеть состав блюд
+GRANT SELECT ON "VСписокЗаказов", "VДетализацияЗаказов", "VДетализацияБлюдСИнгредиентами" TO работник;
 
--- Права на таблицы
 GRANT SELECT ON TABLE
-    "Касса", "Смена", "Блюдо", "КатегорияБлюда", "Сотрудник", -- Сотрудник - для выбора оформившего заказ
-    "Заказ", "ПозицияЗаказа" -- Для просмотра своих или всех заказов (в зависимости от политики)
-TO "Работник";
+    "Касса", "Смена", "Блюдо", "КатегорияБлюда", "Сотрудник",
+    "Заказ", "ПозицияЗаказа", "СоставБлюда"
+TO работник;
 
-GRANT INSERT ON TABLE "Заказ", "ПозицияЗаказа" TO "Работник";
+GRANT INSERT ON TABLE "Заказ", "ПозицияЗаказа" TO работник;
 
--- Общая сумма должна обновляться автоматически (триггером или процедурой "ДобавитьПозициюВЗаказ")
--- СтатусЗаказа мы решили не добавлять, поэтому убираем его из UPDATE
-GRANT UPDATE ("Тип_оплаты") ON "Заказ" TO "Работник";
--- Если нужно обновлять сотрудника или кассу в заказе (редко, но возможно для исправления ошибок)
-GRANT UPDATE ("ID_кассы", "ID_сотрудника_оформившего") ON "Заказ" TO "Работник";
+-- РАСШИРЯЕМ ПРАВА НА UPDATE для таблицы "Заказ"
+GRANT UPDATE ("Тип_оплаты", "ID_кассы", "ID_сотрудника_оформившего", "Общая_сумма") ON "Заказ" TO работник;
 
+GRANT UPDATE ("Количество", "Цена_на_момент_заказа") ON "ПозицияЗаказа" TO работник;
 
-GRANT DELETE ON "ПозицияЗаказа" TO "Работник"; -- Возможность удалить позицию из нового/редактируемого заказа
+GRANT DELETE ON "ПозицияЗаказа" TO работник;
 
--- Права на функции (если будут созданы такие агрегирующие функции)
--- CREATE PROCEDURE "СоздатьНовыйЗаказ"(id_кассы_вход INTEGER, id_сотрудника_вход INTEGER, INOUT id_нового_заказа_выход INTEGER)
--- CREATE PROCEDURE "ДобавитьПозициюВЗаказ"(id_заказа_вход INTEGER, id_блюда_вход INTEGER, количество_вход INTEGER)
--- Если такие процедуры будут, то:
--- GRANT EXECUTE ON PROCEDURE "СоздатьНовыйЗаказ"(INTEGER, INTEGER, INOUT INTEGER) TO "Работник";
--- GRANT EXECUTE ON PROCEDURE "ДобавитьПозициюВЗаказ"(INTEGER, INTEGER, INTEGER) TO "Работник";
+GRANT EXECUTE ON FUNCTION "СоздатьНовыйЗаказ"(INTEGER, INTEGER, OUT INTEGER) TO работник;
+GRANT EXECUTE ON FUNCTION "ДобавитьПозициюВЗаказ"(INTEGER, INTEGER, INTEGER) TO работник;
 
-
--- Важно: Дать права на последовательности (SERIAL) для тех таблиц, куда роли могут делать INSERT
--- Этот блок должен выполняться от имени суперпользователя (например, postgres)
--- или пользователя, создавшего эти последовательности.
--- Он выдаст права всем трем созданным ролям.
+-- Права на последовательности (SERIAL)
 DO $$
 DECLARE
     r RECORD;
-    rolename TEXT;
+    rolename_var TEXT;
 BEGIN
-    FOR rolename IN SELECT unnest(ARRAY['Владелец', 'АдминистраторСклада', 'Работник'])
+    FOR rolename_var IN SELECT unnest(ARRAY['владелец', 'администраторсклада', 'работник'])
     LOOP
         FOR r IN (SELECT sequence_name FROM information_schema.sequences WHERE sequence_schema = 'public')
         LOOP
-            EXECUTE 'GRANT USAGE, SELECT ON SEQUENCE public.' || quote_ident(r.sequence_name) || ' TO ' || quote_ident(rolename) || ';';
+            EXECUTE 'GRANT USAGE, SELECT ON SEQUENCE public.' || quote_ident(r.sequence_name) || ' TO ' || quote_ident(rolename_var) || ';';
         END LOOP;
     END LOOP;
 END$$;
-
--- Установка прав по умолчанию для БУДУЩИХ объектов (если нужно)
--- Это может быть полезно, но для курсовой явных GRANT обычно достаточно.
-/*
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO "Владелец";
-ALTER DEFAULT PRIVILEGES FOR ROLE "имя_создателя_объектов_если_не_суперюзер" IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO "АдминистраторСклада";
-ALTER DEFAULT PRIVILEGES FOR ROLE "имя_создателя_объектов_если_не_суперюзер" IN SCHEMA public GRANT SELECT, INSERT, UPDATE ON TABLES TO "Работник";
-
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT EXECUTE ON FUNCTIONS TO "Владелец", "АдминистраторСклада", "Работник";
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE ON SEQUENCES TO "Владелец", "АдминистраторСклада", "Работник";
-*/
 
 COMMIT;

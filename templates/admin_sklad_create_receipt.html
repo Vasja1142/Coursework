@@ -1,0 +1,32 @@
+admin_sklad_create_receipt.html{% extends "base.html" %}
+{% block title %}Оформление нового поступления{% endblock %}
+{% block content %}
+    <h2>Оформление нового поступления продуктов</h2>
+    <form method="post">
+        <div class="form-group">
+            <label for="id_sklada">Склад:</label>
+            <select name="id_sklada" id="id_sklada" class="form-control" required>
+                <option value="">-- Выберите склад --</option>
+                {% for sklad in warehouses %}
+                    <option value="{{ sklad['ID_склада'] }}">{{ sklad['Название'] }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <label for="id_sotrudnika">Сотрудник, принявший поступление:</label>
+            <select name="id_sotrudnika" id="id_sotrudnika" class="form-control" required>
+                <option value="">-- Выберите сотрудника --</option>
+                {% for sotrudnik in employees %}
+                    <option value="{{ sotrudnik['ID_сотрудника'] }}">{{ sotrudnik['Фамилия'] }} {{ sotrudnik['Имя'] }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <label for="nomer_nakladnoy">Номер накладной (необязательно):</label>
+            <input type="text" name="nomer_nakladnoy" id="nomer_nakladnoy" class="form-control">
+        </div>
+        <button type="submit" class="btn btn-primary">Создать документ поступления</button>
+    </form>
+    <hr>
+    <a href="{{ url_for('admin_sklad_dashboard') }}" class="btn btn-secondary mt-3">Назад к панели Администратора</a>
+{% endblock %}

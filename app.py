@@ -101,6 +101,228 @@ def owner_dashboard():
 def admin_sklad_dashboard():
     return render_template('admin_sklad_dashboard.html')
 
+@app.route('/admin_sklad/stock_balance')
+@login_required("АдминистраторСклада")
+def admin_sklad_stock_balance():
+    stock_balance = []
+    try:
+        with g.db_conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+            cur.execute('SELECT * FROM "VТекущиеОстатки";')
+            stock_balance = cur.fetchall()
+    except psycopg2.Error as e:
+        flash(f"Ошибка при получении остатков: {e}", "error")
+    return render_template('admin_sklad_stock_balance.html', stock_balance=stock_balance)
+
+@app.route('/admin_sklad/create_write_off', methods=['GET', 'POST'])
+@login_required("АдминистраторСклада")
+def admin_sklad_create_write_off():
+    warehouses = []
+    employees = []
+    reasons = []
+    products = []
+    dishes = []
+
+    try:
+        with g.db_conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+            cur.execute('SELECT "ID_склада", "Название" FROM "Склад" ORDER BY "Название";')
+            warehouses = cur.fetchall()
+            cur.execute('SELECT "ID_сотрудника", "Фамилия", "Имя" FROM "Сотрудник" WHERE "Активен" = TRUE ORDER BY "Фамилия";')
+            employees = cur.fetchall()
+            cur.execute('SELECT "ID_причины_списания", "Название" FROM "ПричинаСписания" ORDER BY "Название";')
+            reasons = cur.fetchall()
+            cur.execute('SELECT "ID_продукта", "Название" FROM "Продукт" ORDER BY "Название";')
+            products = cur.fetchall()
+            cur.execute('SELECT "ID_блюда", "Название" FROM "Блюдо" ORDER BY "Название";')
+            dishes = cur.fetchall()
+    except psycopg2.Error as e:
+        flash(f"Ошибка при загрузке данных для формы списания: {e}", "error")
+        return redirect(url_for('admin_sklad_dashboard'))
+
+    if request.method == 'POST':
+        id_sklada = request.form.get('id_sklada')
+        id_sotrudnika = request.form.get('id_sotrudnika_otv') # другое имя, чтобы не путать с формой поступления
+        id_prichiny = request.form.get('id_prichiny')
+        kommentariy = request.form.get('kommentariy', '').strip()
+        write_off_type = request.form.get('write_off_type') # 'product' or 'dish'
+        object_id = request.form.get('object_id')
+        quantity_str = request.form.get('quantity_write_off')
+
+        if not all([id_sklada, id_sotrudnika, id_prichiny, write_off_type, object_id, quantity_str]):
+            flash("Все поля (кроме комментария) должны быть заполнены.", "error")
+        else:
+            try:
+                p_id_sklada = int(id_sklada)
+                p_id_sotrudnika = int(id_sotrudnika)
+                p_id_prichiny = int(id_prichiny)
+                p_object_id = int(object_id)
+                p_quantity = float(quantity_str) # float для продуктов, int для блюд - функция обработает
+
+                if p_quantity <= 0:
+                    flash("Количество для списания должно быть больше нуля.", "error")
+                else:
+                    new_write_off_id = None
+                    with g.db_conn.cursor() as cur:
+                        if write_off_type == 'product':
+                            cur.callproc('создать_списание_продукта',
+                                         (p_id_sklada, p_id_sotrudnika, p_id_prichiny, kommentariy, p_object_id, p_quantity))
+                        elif write_off_type == 'dish':
+                            cur.callproc('создать_списание_блюда',
+                                         (p_id_sklada, p_id_sotrudnika, p_id_prichiny, kommentariy, p_object_id, int(p_quantity)))
+                        else:
+                            flash("Неверный тип объекта для списания.", "error")
+                            return render_template('admin_sklad_create_write_off.html', warehouses=warehouses, employees=employees, reasons=reasons, products=products, dishes=dishes, form_data=request.form)
+
+                        # Функции возвращают ID списания
+                        result = cur.fetchone()
+                        if result: new_write_off_id = result[0]
+                    
+                    if new_write_off_id:
+                        g.db_conn.commit()
+                        flash(f"Списание #{new_write_off_id} успешно оформлено!", "success")
+                        return redirect(url_for('admin_sklad_dashboard')) # Или на страницу просмотра списаний, если она будет
+                    else:
+                        g.db_conn.rollback()
+                        flash("Не удалось оформить списание (не получен ID). Возможно, ошибка в хранимой функции.", "error")
+
+            except psycopg2.Error as e:
+                g.db_conn.rollback()
+                flash(f"Ошибка базы данных при оформлении списания: {e}", "error")
+            except ValueError:
+                flash("Некорректные числовые значения в форме списания.", "error")
+        # Сохраняем данные формы для повторного отображения при ошибке
+        return render_template('admin_sklad_create_write_off.html', warehouses=warehouses, employees=employees, reasons=reasons, products=products, dishes=dishes, form_data=request.form)
+
+
+    return render_template('admin_sklad_create_write_off.html', warehouses=warehouses, employees=employees, reasons=reasons, products=products, dishes=dishes, form_data={})
+
+@app.route('/admin_sklad/create_receipt', methods=['GET', 'POST'])
+@login_required("АдминистраторСклада")
+def admin_sklad_create_receipt():
+    warehouses = []
+    employees = []
+    try:
+        with g.db_conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+            cur.execute('SELECT "ID_склада", "Название" FROM "Склад" ORDER BY "Название";')
+            warehouses = cur.fetchall()
+            # Администратор склада может выбрать любого активного сотрудника как принявшего
+            cur.execute('SELECT "ID_сотрудника", "Фамилия", "Имя" FROM "Сотрудник" WHERE "Активен" = TRUE ORDER BY "Фамилия";')
+            employees = cur.fetchall()
+    except psycopg2.Error as e:
+        flash(f"Ошибка при загрузке данных для формы поступления: {e}", "error")
+        return redirect(url_for('admin_sklad_dashboard'))
+
+    if request.method == 'POST':
+        id_sklada = request.form.get('id_sklada')
+        id_sotrudnika = request.form.get('id_sotrudnika')
+        nomer_nakladnoy = request.form.get('nomer_nakladnoy', '').strip() # Необязательное поле
+
+        if not id_sklada or not id_sotrudnika:
+            flash("Необходимо выбрать склад и сотрудника.", "error")
+        else:
+            try:
+                new_receipt_id = None
+                with g.db_conn.cursor() as cur:
+                    cur.execute(
+                        'INSERT INTO "Поступление" ("ID_склада", "ID_сотрудника_принявшего", "Номер_накладной") VALUES (%s, %s, %s) RETURNING "ID_поступления";',
+                        (int(id_sklada), int(id_sotrudnika), nomer_nakladnoy if nomer_nakladnoy else None)
+                    )
+                    result = cur.fetchone()
+                    if result: new_receipt_id = result[0]
+
+                if new_receipt_id:
+                    g.db_conn.commit()
+                    flash(f"Документ поступления #{new_receipt_id} успешно создан. Теперь добавьте позиции.", "success")
+                    return redirect(url_for('admin_sklad_add_item_to_receipt', receipt_id=new_receipt_id))
+                else:
+                    g.db_conn.rollback()
+                    flash("Не удалось создать документ поступления (не получен ID).", "error")
+            except psycopg2.Error as e:
+                g.db_conn.rollback()
+                flash(f"Ошибка базы данных при создании поступления: {e}", "error")
+            except ValueError:
+                flash("Некорректные ID склада или сотрудника.", "error")
+    
+    return render_template('admin_sklad_create_receipt.html', warehouses=warehouses, employees=employees)
+
+@app.route('/admin_sklad/receipt/<int:receipt_id>/add_item', methods=['GET', 'POST'])
+@login_required("АдминистраторСклада")
+def admin_sklad_add_item_to_receipt(receipt_id):
+    receipt_info = None
+    receipt_items = []
+    all_products = []
+
+    # Загрузка информации о поступлении и продуктах
+    try:
+        with g.db_conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+            cur.execute('''
+                SELECT p.*, s."Название" as "Название_склада", emp."Фамилия" as "Фамилия_сотрудника", emp."Имя" as "Имя_сотрудника"
+                FROM "Поступление" p
+                JOIN "Склад" s ON p."ID_склада" = s."ID_склада"
+                JOIN "Сотрудник" emp ON p."ID_сотрудника_принявшего" = emp."ID_сотрудника"
+                WHERE p."ID_поступления" = %s;
+            ''', (receipt_id,))
+            receipt_info = cur.fetchone()
+
+            if not receipt_info:
+                flash(f"Поступление #{receipt_id} не найдено.", "error")
+                return redirect(url_for('admin_sklad_dashboard'))
+
+            cur.execute('''
+                SELECT pp.*, pr."Название" as "Название_продукта", ei."Краткое_название" as "Ед_изм"
+                FROM "ПозицияПоступления" pp
+                JOIN "Продукт" pr ON pp."ID_продукта" = pr."ID_продукта"
+                JOIN "ЕдиницаИзмерения" ei ON pr."ID_единицы_измерения" = ei."ID_единицы_измерения"
+                WHERE pp."ID_поступления" = %s ORDER BY pr."Название";
+            ''', (receipt_id,))
+            receipt_items = cur.fetchall()
+
+            cur.execute('SELECT "ID_продукта", "Название" FROM "Продукт" ORDER BY "Название";')
+            all_products = cur.fetchall()
+    except psycopg2.Error as e:
+        flash(f"Ошибка при загрузке данных для поступления #{receipt_id}: {e}", "error")
+        return redirect(url_for('admin_sklad_dashboard'))
+
+    if request.method == 'POST':
+        product_id_form = request.form.get('product_id')
+        quantity_form = request.form.get('quantity')
+        purchase_price_form = request.form.get('purchase_price')
+
+        if not product_id_form or not quantity_form or not purchase_price_form:
+            flash("Необходимо выбрать продукт, указать количество и цену закупки.", "error")
+        else:
+            try:
+                product_id = int(product_id_form)
+                quantity = float(quantity_form) # Количество может быть дробным
+                purchase_price = float(purchase_price_form)
+
+                if quantity <= 0 or purchase_price < 0:
+                    flash("Количество должно быть больше нуля, а цена закупки не может быть отрицательной.", "error")
+                else:
+                    with g.db_conn.cursor() as cur:
+                        # Проверяем, нет ли уже такой позиции, чтобы избежать дублирования первичного ключа
+                        # или можно использовать ON CONFLICT DO UPDATE, если это нужно
+                        cur.execute(
+                            'INSERT INTO "ПозицияПоступления" ("ID_поступления", "ID_продукта", "Количество", "Цена_закупки") VALUES (%s, %s, %s, %s);',
+                            (receipt_id, product_id, quantity, purchase_price)
+                        )
+                    g.db_conn.commit()
+                    flash(f"Продукт успешно добавлен в поступление #{receipt_id}!", "success")
+                    return redirect(url_for('admin_sklad_add_item_to_receipt', receipt_id=receipt_id))
+            except psycopg2.IntegrityError as e: # Например, попытка добавить тот же продукт снова
+                g.db_conn.rollback()
+                flash(f"Ошибка: Продукт уже есть в этом поступлении или другая ошибка целостности. {e}", "warning")
+            except psycopg2.Error as e:
+                g.db_conn.rollback()
+                flash(f"Ошибка базы данных при добавлении позиции в поступление: {e}", "error")
+            except ValueError:
+                flash("Некорректный ID продукта, количество или цена закупки.", "error")
+    
+    return render_template('admin_sklad_add_item_to_receipt.html',
+                           receipt_id=receipt_id,
+                           receipt_info=receipt_info,
+                           receipt_items=receipt_items,
+                           all_products=all_products)
+
 @app.route('/worker')
 @login_required("Работник")
 def worker_dashboard():

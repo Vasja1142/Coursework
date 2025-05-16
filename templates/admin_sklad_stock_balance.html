@@ -1,0 +1,35 @@
+<!-- templates/admin_sklad_stock_balance.html -->
+{% extends "base.html" %}
+
+{% block title %}Остатки на складах{% endblock %}
+
+{% block content %}
+    <h2>Остатки на складах</h2>
+    {% if stock_balance %}
+        <table class="table table-striped table-sm">
+            <thead>
+                <tr>
+                    <th>Склад</th>
+                    <th>Продукт</th>
+                    <th>Категория продукта</th>
+                    <th>Количество</th>
+                    <th>Единица измерения</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in stock_balance %}
+                    <tr>
+                        <td>{{ item['Склад'] }}</td>
+                        <td>{{ item['Продукт'] }}</td>
+                        <td>{{ item['Категория_продукта'] }}</td>
+                        <td>{{ item['Количество'] }}</td>
+                        <td>{{ item['Ед_изм'] }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <p>Нет данных об остатках.</p>
+    {% endif %}
+    <a href="{{ url_for('admin_sklad_dashboard') }}" class="btn btn-secondary mt-3">Назад к панели Администратора</a>
+{% endblock %}
